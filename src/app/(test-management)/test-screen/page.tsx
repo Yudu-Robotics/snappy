@@ -335,6 +335,9 @@ export default function TestScreen() {
 
       let serial_number: Uint8Array;
       if (platform === "windows") {
+        if (!result.data) {
+          throw new Error("No data received from controlTransferIn");
+        }
         const serialKey = new Uint8Array(result.data.buffer);
         const serialArray: number[] = [];
         for (let i = 2; i < serialKey.length; i += 2) {
@@ -350,34 +353,28 @@ export default function TestScreen() {
       console.log("Serial number:", Array.from(serial_number));
 
       await deviceRef.current.transferOut(2, command);
+      
       setUsbConnected(true);
       setError(null);
       usbListeningRef.current = true;
 
       while (true) {
         try {
-          const result = await transferInWithTimeout(
-            deviceRef.current,
-            2,
-            64,
-            10
-          );
+          const result = await deviceRef.current.transferIn(2, 64);
+          
           if (result.status === "ok" && result.data) {
             if (phase === "collecting") {
               const int8Array = new Uint8Array(result.data.buffer);
               if (int8Array.length === 17) {
                 const data = new Uint8Array([...int8Array.slice(0, 17)]);
                 const answer = decrypt(
-                  new Uint8Array(
-                    [...serialNumber].map((char) => char.charCodeAt(0))
-                  ),
+                  serial_number,
                   data
                 );
                 if (
                   typeof answer === "string" &&
                   answer.trim().startsWith("{")
                 ) {
-                  console.log("answer", answer);
                   try {
                     const jsonData: { MAC: string; value: number } =
                       JSON.parse(answer);
@@ -460,7 +457,7 @@ export default function TestScreen() {
               );
             }
           }
-          await new Promise((resolve) => setTimeout(resolve, 0)); // 100ms delay
+          // await new Promise((resolve) => setTimeout(resolve, 0)); // 100ms delay
         } catch (loopError) {
           console.error("Error in USB listening loop:", loopError);
           setError("Error receiving USB data. Please reconnect the device.");
