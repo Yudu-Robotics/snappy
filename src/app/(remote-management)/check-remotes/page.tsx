@@ -242,21 +242,19 @@ const Page: React.FC = () => {
           //       d.serialNumber === deviceInfo.serialNumber)
           // );
         }}
-      >
-        <a
-          href="/test-screen"
-          className="text-md text-[#0A0A0A] font-tthoves-semiBold mb-2 p-4 bg-red-300"
-        >
-          Start test
-        </a>
-      </div>
+      ></div>
 
       {error && <div className="text-red-500 mb-4 z-20">{error}</div>}
 
       {isLoading && (
         <div className="text-[#4A4A4F] mb-4 z-20">Connecting...</div>
       )}
-
+      <a
+        href="/test-screen"
+        className="text-md text-[#0A0A0A] font-tthoves-semiBold mb-2 p-4 bg-red-300 z-50"
+      >
+        Start test
+      </a>
       <div className="w-full max-w-4xl bg-white rounded-2xl shadow-md p-6 z-20">
         <h1 className="text-2xl text-[#0A0A0A] font-tthoves-semiBold mb-6">
           Receivers and Remotes
@@ -333,7 +331,7 @@ const Page: React.FC = () => {
                           <div>
                             <p className="text-[#0A0A0A] font-tthoves-regular">
                               {remoteIndex === 0
-                                ? "Teacher Remote"
+                                ? "Studnet Remote"
                                 : `Student Remote ${remoteIndex}`}
                               : {remote.remote_name || "Unnamed Remote"}
                             </p>

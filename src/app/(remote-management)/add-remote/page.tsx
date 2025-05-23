@@ -202,12 +202,14 @@ const ScanConnector: React.FC = () => {
   };
 
   const handleConfirmName = () => {
-    if (customName.trim() && receiverId) {
+    console.log("Custom Name:", customName);
+    if (receiverId) {
       dispatch(
         updateReceiverName({ receiverID: receiverId, receiverName: customName })
       );
       setIsEditing(false);
     }
+    setIsEditing(false);
   };
 
   const handleEditRemoteClick = (remote_id: string, currentName: string) => {
@@ -409,7 +411,7 @@ const ScanConnector: React.FC = () => {
                         autoFocus
                       />
                     )}
-                    {isEditing && customName.trim() && (
+                    {isEditing && (
                       <button
                         onClick={handleConfirmName}
                         className="text-[#5423E6] rounded-xl flex items-center justify-center font-tthoves-bold text-xs border-2 border-[#4c29b4] px-2 py-1"
@@ -446,9 +448,6 @@ const ScanConnector: React.FC = () => {
                 {studentRemotes.length === 0 && (
                   <div className="font-tthoves-medium">
                     <div>Please Press Any Button of Remotes</div>
-                    <div className="text-sm">
-                      Note :- First remote for teacher only
-                    </div>
                   </div>
                 )}
                 <div className="flex flex-col flex-1">
