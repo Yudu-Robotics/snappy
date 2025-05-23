@@ -2,12 +2,11 @@
 import { useSelector, useDispatch } from "react-redux";
 import renderSvg from "@/svgImport";
 import renderImg from "@/imgImport";
-import React, { useEffect, useState } from "react";
-import init, { decrypt } from "snappy-remote";
-import Link from "next/link";
+import React, { useState } from "react";
+// import init, { decrypt } from "snappy-remote";
 import Image from "next/image";
 import { safeSetCurrentReceiver } from "@/app/redux/feature/remoteSlice/remoteSlice";
-import { getOS } from "@/utils/getPlatform";
+// import { getOS } from "@/utils/getPlatform";
 
 interface Remote {
   remote_name: string;
@@ -40,11 +39,11 @@ interface RootState {
   };
 }
 
-interface DeviceInfo {
-  vendorId?: number;
-  productId?: number;
-  serialNumber?: string;
-}
+// interface DeviceInfo {
+//   vendorId?: number;
+//   productId?: number;
+//   serialNumber?: string;
+// }
 
 const Page: React.FC = () => {
   const dispatch = useDispatch();
@@ -53,141 +52,158 @@ const Page: React.FC = () => {
   );
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [availableReceivers, setAvailableReceivers] = useState<string[]>([]);
-  const platform = getOS();
+  // const [availableReceivers, setAvailableReceivers] = useState<string[]>([]);
+  // const platform = getOS();
+  // const [connectedDevice, setConnectedDevice] = useState<USBDevice | null>(
+  //   null
+  // );
 
-  useEffect(() => {
-    async function initialize() {
-      await init();
-    }
-    initialize();
-  }, []);
+  // useEffect(() => {
+  //   async function initialize() {
+  //     await init();
+  //   }
+  //   initialize();
+  // }, []);
 
-  async function getAndOpenDevice() {
-    try {
-      const deviceInfo: DeviceInfo = JSON.parse(
-        localStorage.getItem("currentDeviceInfo") || "{}"
-      );
-      if (!deviceInfo.vendorId || !deviceInfo.productId) {
-        throw new Error("No device information found in localStorage.");
-      }
+  // useEffect(() => {
+  //   return () => {
+  //     // Cleanup function that runs when component unmounts
+  //     if (connectedDevice) {
+  //       connectedDevice
+  //         .close()
+  //         .then(() => console.log("Device closed successfully"))
+  //         .catch((err) => console.error("Error closing device:", err));
+  //     }
+  //   };
+  // }, [connectedDevice]);
 
-      const devices = await navigator.usb.getDevices();
-      const device = devices.find(
-        (d: USBDevice) =>
-          d.vendorId === deviceInfo.vendorId &&
-          d.productId === deviceInfo.productId &&
-          (!deviceInfo.serialNumber ||
-            d.serialNumber === deviceInfo.serialNumber)
-      );
+  // async function getAndOpenDevice() {
+  //   try {
+  //     const deviceInfo: DeviceInfo = JSON.parse(
+  //       localStorage.getItem("currentDeviceInfo") || "{}"
+  //     );
+  //     if (!deviceInfo.vendorId || !deviceInfo.productId) {
+  //       throw new Error("No device information found in localStorage.");
+  //     }
 
-      if (!device) {
-        throw new Error("Device not found or not authorized.");
-      }
+  //     const devices = await navigator.usb.getDevices();
+  //     const device = devices.find(
+  //       (d: USBDevice) =>
+  //         d.vendorId === deviceInfo.vendorId &&
+  //         d.productId === deviceInfo.productId &&
+  //         (!deviceInfo.serialNumber ||
+  //           d.serialNumber === deviceInfo.serialNumber)
+  //     );
 
-      return device;
-    } catch (error: unknown) {
-      console.error("Error retrieving device:", error);
-      throw error instanceof Error ? error : new Error(String(error));
-    }
-  }
+  //     if (!device) {
+  //       throw new Error("Device not found or not authorized.");
+  //     }
 
-  async function sendCommandAndListen() {
-    let device: USBDevice | undefined;
-    try {
-      device = await getAndOpenDevice();
-      await device.close();
-      await device.open();
-      console.log("Device opened");
-      if (device.configuration === null) {
-        await device.selectConfiguration(1);
-      }
-      await device.claimInterface(1);
-      console.log("Interface claimed");
-      const command = new TextEncoder().encode("START\n");
-      const descriptorIndex = device.serialNumber ? 0 : 3;
-      const result = await device.controlTransferIn(
-        {
-          requestType: "standard",
-          recipient: "device",
-          request: 0x06,
-          value: (0x03 << 8) | descriptorIndex,
-          index: 0x0409,
-        },
-        255
-      );
-      if (!result.data) {
-        throw new Error("No data received from control transfer");
-      }
-      let serial_number: Uint8Array;
-      if (platform === "windows") {
-        const serialKey = new Uint8Array(result.data.buffer);
-        const serialArray: number[] = [];
-        for (let i = 2; i < serialKey.length; i += 2) {
-          serialArray.push(serialKey[i]);
-        }
-        serial_number = new Uint8Array(serialArray);
-      } else {
-        const serialNumber = device.serialNumber || "";
-        serial_number = new Uint8Array(
-          [...serialNumber].map((char) => char.charCodeAt(0))
-        );
-      }
-      await device.transferOut(2, command);
-      console.log("Command sent");
+  //     return device;
+  //   } catch (error: unknown) {
+  //     console.error("Error retrieving device:", error);
+  //     throw error instanceof Error ? error : new Error(String(error));
+  //   }
+  // }
 
-      const maxIterations = 1000;
-      let iteration = 0;
-      while (iteration < maxIterations) {
-        const result = await device.transferIn(2, 64);
-        if (result.status === "ok" && result.data) {
-          const int8Array = new Uint8Array(result.data.buffer);
-          if (int8Array.length === 17) {
-            const data = new Uint8Array([...int8Array.slice(0, 17)]);
-            const answer = decrypt(serial_number, data);
-            console.log("Decrypted answer:", answer);
-            if (typeof answer === "string" && answer.trim().startsWith("{")) {
-              try {
-                const jsonData = JSON.parse(answer);
-                console.log("Parsed JSON:", jsonData);
-                if (jsonData?.MAC) {
-                  setAvailableReceivers((prev) => {
-                    if (!prev.includes(jsonData.MAC)) {
-                      return [...prev, jsonData.MAC];
-                    }
-                    return prev;
-                  });
-                }
-              } catch (parseError) {
-                console.error("JSON parse error:", parseError);
-              }
-            }
-          }
-        } else {
-          console.log("Transfer error:", result.status);
-        }
-        iteration++;
-      }
-      throw new Error("Max iterations reached");
-    } catch (error: unknown) {
-      console.error("Error in sendCommandAndListen:", error);
-      setError(
-        error instanceof Error
-          ? error.message
-          : "Failed to communicate with USB device"
-      );
-    }
-  }
+  // async function sendCommandAndListen() {
+  //   let device: USBDevice | undefined;
+  //   try {
+  //     device = await getAndOpenDevice();
+
+  //     // await device.open();
+  //     // setConnectedDevice(device);
+  //     console.log("Device opened");
+  //     if (device.configuration === null) {
+  //       await device.selectConfiguration(1);
+  //     }
+  //     await device.claimInterface(1);
+  //     console.log("Interface claimed");
+  //     const command = new TextEncoder().encode("START\n");
+  //     const descriptorIndex = device.serialNumber ? 0 : 3;
+  //     const result = await device.controlTransferIn(
+  //       {
+  //         requestType: "standard",
+  //         recipient: "device",
+  //         request: 0x06,
+  //         value: (0x03 << 8) | descriptorIndex,
+  //         index: 0x0409,
+  //       },
+  //       255
+  //     );
+  //     if (!result.data) {
+  //       throw new Error("No data received from control transfer");
+  //     }
+  //     let serial_number: Uint8Array;
+  //     if (platform === "windows") {
+  //       const serialKey = new Uint8Array(result.data.buffer);
+  //       const serialArray: number[] = [];
+  //       for (let i = 2; i < serialKey.length; i += 2) {
+  //         serialArray.push(serialKey[i]);
+  //       }
+  //       serial_number = new Uint8Array(serialArray);
+  //     } else {
+  //       const serialNumber = device.serialNumber || "";
+  //       serial_number = new Uint8Array(
+  //         [...serialNumber].map((char) => char.charCodeAt(0))
+  //       );
+  //     }
+  //     await device.transferOut(2, command);
+  //     console.log("Command sent");
+
+  //     // const maxIterations = 1000;
+  //     let iteration = 0;
+  //     while (true) {
+  //       const result = await device.transferIn(2, 64);
+  //       console.log("Received data:", result);
+  //       if (result.status === "ok" && result.data) {
+  //         const int8Array = new Uint8Array(result.data.buffer);
+  //         if (int8Array.length === 17) {
+  //           const data = new Uint8Array([...int8Array.slice(0, 17)]);
+  //           const answer = decrypt(serial_number, data);
+  //           console.log("Decrypted answer:", answer);
+  //           if (typeof answer === "string" && answer.trim().startsWith("{")) {
+  //             try {
+  //               const jsonData = JSON.parse(answer);
+  //               console.log("Parsed JSON:", jsonData);
+  //               if (jsonData?.MAC) {
+  //                 setAvailableReceivers((prev) => {
+  //                   if (!prev.includes(jsonData.MAC)) {
+  //                     return [...prev, jsonData.MAC];
+  //                   }
+  //                   return prev;
+  //                 });
+  //               }
+  //             } catch (parseError) {
+  //               console.error("JSON parse error:", parseError);
+  //             }
+  //           }
+  //         }
+  //       } else {
+  //         console.log("Transfer error:", result.status);
+  //       }
+  //       iteration++;
+  //     }
+  //     throw new Error("Max iterations reached");
+  //   } catch (error: unknown) {
+  //     console.error("Error in sendCommandAndListen:", error);
+  //     setError(
+  //       error instanceof Error
+  //         ? error.message
+  //         : "Failed to communicate with USB device"
+  //     );
+  //   }
+  // }
 
   const handleReceiverSelect = (receiverID: string) => {
     setIsLoading(true);
     setError(null);
-    sendCommandAndListen().catch((err) => {
-      setError(
-        err instanceof Error ? err.message : "Failed to connect to device"
-      );
-      setIsLoading(false);
-    });
+    // sendCommandAndListen().catch((err) => {
+    //   setError(
+    //     err instanceof Error ? err.message : "Failed to connect to device"
+    //   );
+    //   setIsLoading(false);
+    // });
     dispatch(safeSetCurrentReceiver(receiverID));
     setIsLoading(false);
   };
@@ -206,9 +222,9 @@ const Page: React.FC = () => {
       <div
         className="absolute z-10 top-4 left-4"
         onClick={async () => {
-          const deviceInfo = JSON.parse(
-            localStorage.getItem("currentDeviceInfo") || "{}"
-          );
+          // const deviceInfo = JSON.parse(
+          //   localStorage.getItem("currentDeviceInfo") || "{}"
+          // );
           const devices = await navigator.usb.getDevices();
           console.log(
             "Available devices:",
@@ -218,24 +234,21 @@ const Page: React.FC = () => {
               serialNumber: d.serialNumber,
             }))
           );
-          const device = devices.find(
-            (d) =>
-              d.vendorId === deviceInfo.vendorId &&
-              d.productId === deviceInfo.productId &&
-              (!deviceInfo.serialNumber ||
-                d.serialNumber === deviceInfo.serialNumber)
-          );
-          if (device?.opened) {
-            await device.close();
-          }
+          // const device = devices.find(
+          //   (d) =>
+          //     d.vendorId === deviceInfo.vendorId &&
+          //     d.productId === deviceInfo.productId &&
+          //     (!deviceInfo.serialNumber ||
+          //       d.serialNumber === deviceInfo.serialNumber)
+          // );
         }}
       >
-        <Link
+        <a
           href="/test-screen"
           className="text-md text-[#0A0A0A] font-tthoves-semiBold mb-2 p-4 bg-red-300"
         >
           Start test
-        </Link>
+        </a>
       </div>
 
       {error && <div className="text-red-500 mb-4 z-20">{error}</div>}
@@ -313,11 +326,9 @@ const Page: React.FC = () => {
                       {receiver.remotes.map((remote, remoteIndex) => (
                         <div
                           key={remote.remote_id}
-                          className={`flex items-center justify-between bg-white rounded-lg p-3 shadow-sm ${
-                            availableReceivers.includes(remote.remote_id)
-                              ? "bg-green-50"
-                              : ""
-                          }`}
+                          className={`flex items-center justify-between bg-white rounded-lg p-3 shadow-sm 
+                          
+                              `}
                         >
                           <div>
                             <p className="text-[#0A0A0A] font-tthoves-regular">
@@ -338,14 +349,14 @@ const Page: React.FC = () => {
                               width={32}
                               height={32}
                             />
-                            {availableReceivers.includes(remote.remote_id) && (
+                            {/* {availableReceivers.includes(remote.remote_id) && (
                               <button
                                 className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center ml-2"
                                 aria-label="Remote connected"
                               >
                                 ✓
                               </button>
-                            )}
+                            )} */}
                           </div>
                         </div>
                       ))}

@@ -288,7 +288,7 @@ export default function TestScreen() {
       setError(null);
       usbListeningRef.current = true;
 
-      while (usbListeningRef.current) {
+      while (true) {
         try {
           const result = await transferInWithTimeout(
             deviceRef.current,

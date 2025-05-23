@@ -53,7 +53,9 @@ const ScanConnector: React.FC = () => {
   const [tempRemoteName, setTempRemoteName] = useState<string>("");
   const platform = getOS();
   const router = useRouter();
-
+  // const [connectedDevice, setConnectedDevice] = useState<USBDevice | null>(
+  //   null
+  // );
   useEffect(() => {
     async function initialize() {
       await init();
@@ -61,9 +63,22 @@ const ScanConnector: React.FC = () => {
     initialize();
   }, []);
 
+  // useEffect(() => {
+  //   return () => {
+  //     // Cleanup function that runs when component unmounts
+  //     if (connectedDevice) {
+  //       connectedDevice
+  //         .close()
+  //         .then(() => console.log("Device closed successfully"))
+  //         .catch((err) => console.error("Error closing device:", err));
+  //     }
+  //   };
+  // }, [connectedDevice]);
+
   async function sendCommandAndListen(device: USBDevice) {
     try {
       await device.open();
+      // setConnectedDevice(device);
       if (device.configuration === null) {
         await device.selectConfiguration(1);
       }
@@ -113,14 +128,14 @@ const ScanConnector: React.FC = () => {
       await device.transferOut(2, command);
       setShowReceiver(true);
 
-      const maxIterations = 1000;
-      let iteration = 0;
-      while (iteration < maxIterations) {
+      // const maxIterations = 1000;
+      // let iteration = 0;
+      while (true) {
         const result = await device.transferIn(2, 64);
         if (result.status === "ok") {
           if (!result.data) {
             console.log("No data received from transferIn");
-            iteration++;
+            // iteration++;
             continue; // Skip to the next iteration if no data
           }
           const int8Array = new Uint8Array(result.data.buffer);
@@ -152,7 +167,7 @@ const ScanConnector: React.FC = () => {
         } else {
           console.log("Transfer error:", result.status);
         }
-        iteration++;
+        // iteration++;
       }
       throw new Error("Max iterations reached");
     } catch (error) {
