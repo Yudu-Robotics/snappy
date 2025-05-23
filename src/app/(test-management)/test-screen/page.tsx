@@ -231,25 +231,6 @@ export default function TestScreen() {
       navigator.usb.removeEventListener("disconnect", handleDisconnect);
   }, []);
 
-  async function transferInWithTimeout(
-    device: USBDevice,
-    endpoint: number,
-    length: number,
-    timeoutMs: number
-  ) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-    try {
-      const result = await device.transferIn(endpoint, length);
-      clearTimeout(timeoutId);
-      return result;
-    } catch (error) {
-      clearTimeout(timeoutId);
-      throw error;
-    }
-  }
-
   async function getAndOpenDevice(): Promise<USBDevice> {
     try {
       const deviceInfo = JSON.parse(
