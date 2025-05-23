@@ -5,6 +5,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { useSelector } from "react-redux";
 import init, { decrypt } from "snappy-remote";
 import { useRouter } from "next/navigation";
+import { getOS } from "@/utils/getPlatform";
 
 interface Option {
   option_id: string;
@@ -23,7 +24,6 @@ interface Question {
   answer_text: string | null;
   options: Option[];
 }
-
 interface TestData {
   test_id: string;
   title: string;
@@ -32,17 +32,14 @@ interface TestData {
   order: number | null;
   questions: Question[];
 }
-
 interface RemoteResponse {
   student_remote_id: string;
   student_remote_response: string;
 }
-
 interface QuestionResponse {
   question_id: string;
   responses: RemoteResponse[];
 }
-
 interface RootState {
   remote: {
     receivers: {
@@ -102,6 +99,7 @@ export default function TestScreen() {
     (state: RootState) => state.remote
   );
   const router = useRouter();
+  const platform = getOS();
 
   const receiver = receivers.find(
     (receiver) => receiver.receiverID === currentReceiver
@@ -142,25 +140,16 @@ export default function TestScreen() {
 
   useEffect(() => {
     async function initialize() {
-      await init();
+      try {
+        await init();
+        console.log("Initialization completed");
+      } catch (initError) {
+        console.error("Initialization error:", initError);
+        setError("Failed to initialize WebUSB");
+      }
     }
-    // setIsFullscreen(false);
     initialize();
   }, []);
-
-  useEffect(() => {
-    setTestData(dummyTestData);
-    if (receiver?.remotes) {
-      const transformedRemotes = receiver.remotes.map((remote) => ({
-        student_remote_id: remote.remote_id,
-        student_remote_mac_id: remote.remote_id,
-        student_remote_name: remote.remote_name,
-      }));
-      setAllRemotes(transformedRemotes);
-    } else {
-      setAllRemotes([]);
-    }
-  }, [receiver]);
 
   useEffect(() => {
     const handleDisconnect = (event: USBDeviceEvent) => {
@@ -176,16 +165,44 @@ export default function TestScreen() {
       navigator.usb.removeEventListener("disconnect", handleDisconnect);
   }, []);
 
+  async function transferInWithTimeout(
+    device: USBDevice,
+    endpoint: number,
+    length: number,
+    timeoutMs: number
+  ) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const result = await device.transferIn(endpoint, length);
+      clearTimeout(timeoutId);
+      return result;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      throw error;
+    }
+  }
+
   async function getAndOpenDevice(): Promise<USBDevice> {
     try {
       const deviceInfo = JSON.parse(
         localStorage.getItem("currentDeviceInfo") || "{}"
       );
+      console.log("Device info from localStorage:", deviceInfo);
       if (!deviceInfo.vendorId || !deviceInfo.productId) {
         throw new Error("No device information found in localStorage.");
       }
 
       const devices = await navigator.usb.getDevices();
+      console.log(
+        "Available devices:",
+        devices.map((d) => ({
+          vendorId: d.vendorId,
+          productId: d.productId,
+          serialNumber: d.serialNumber,
+        }))
+      );
       const device = devices.find(
         (d) =>
           d.vendorId === deviceInfo.vendorId &&
@@ -193,10 +210,23 @@ export default function TestScreen() {
           (!deviceInfo.serialNumber ||
             d.serialNumber === deviceInfo.serialNumber)
       );
-
+      
       if (!device) {
         throw new Error("Device not found or not authorized.");
       }
+
+      if (!device.opened) {
+        await device.open();
+        console.log("Device opened");
+      }
+
+      if (device.configuration === null) {
+        await device.selectConfiguration(1);
+        console.log("Configuration selected");
+      }
+
+      await device.claimInterface(1);
+      console.log("Interface claimed");
 
       return device;
     } catch (error: unknown) {
@@ -205,7 +235,7 @@ export default function TestScreen() {
     }
   }
 
-  const connectToUSBDevice = async () => {
+  async function connectToUSBDevice() {
     if (usbConnected && usbListeningRef.current) {
       console.log("USB device already connected and listening");
       return;
@@ -219,15 +249,6 @@ export default function TestScreen() {
       }
 
       deviceRef.current = await getAndOpenDevice();
-      await deviceRef.current.close();
-      await deviceRef.current.open();
-      console.log("Device opened");
-
-      if (deviceRef.current.configuration === null) {
-        await deviceRef.current.selectConfiguration(1);
-      }
-
-      await deviceRef.current.claimInterface(1);
       const serialNumber = deviceRef.current.serialNumber || "";
       const command = new TextEncoder().encode("START\n");
       const descriptorIndex = serialNumber ? 0 : 3;
@@ -246,21 +267,37 @@ export default function TestScreen() {
         throw new Error("No data received from control transfer");
       }
 
-      const serialKey = new Uint8Array(result.data.buffer);
-      const serial_number = [];
-      for (let i = 2; i < serialKey.length; i += 2) {
-        serial_number.push(serialKey[i]);
+      let serial_number: Uint8Array;
+      if (platform === "windows") {
+        const serialKey = new Uint8Array(result.data.buffer);
+        const serialArray: number[] = [];
+        for (let i = 2; i < serialKey.length; i += 2) {
+          serialArray.push(serialKey[i]);
+        }
+        serial_number = new Uint8Array(serialArray);
+      } else {
+        const serialNumber = deviceRef.current.serialNumber || "";
+        serial_number = new Uint8Array(
+          [...serialNumber].map((char) => char.charCodeAt(0))
+        );
       }
-      await deviceRef.current.transferOut(2, command);
+      console.log("Serial number:", Array.from(serial_number));
 
+      await deviceRef.current.transferOut(2, command);
       setUsbConnected(true);
       setError(null);
       usbListeningRef.current = true;
 
-      while (usbListeningRef.current && deviceRef.current) {
-        try {
-          const result = await deviceRef.current.transferIn(2, 64);
+      const expectedRemotes = receiver?.remotes.length || 0;
 
+      while (usbListeningRef.current) {
+        try {
+          const result = await transferInWithTimeout(
+            deviceRef.current,
+            2,
+            64,
+            10
+          );
           if (result.status === "ok" && result.data) {
             if (phase === "collecting") {
               const int8Array = new Uint8Array(result.data.buffer);
@@ -359,9 +396,11 @@ export default function TestScreen() {
               );
             }
           }
+          await new Promise((resolve) => setTimeout(resolve, 0)); // 100ms delay
         } catch (loopError) {
           console.error("Error in USB listening loop:", loopError);
           setError("Error receiving USB data. Please reconnect the device.");
+          usbListeningRef.current = false;
           break;
         }
       }
@@ -369,8 +408,18 @@ export default function TestScreen() {
       console.error("Error:", error);
       setError("Failed to connect to USB device. Please try again.");
       usbListeningRef.current = false;
+      setUsbConnected(false);
+    } finally {
+      if (deviceRef.current && deviceRef.current.opened) {
+        try {
+          await deviceRef.current.close();
+          console.log("Device closed");
+        } catch (closeError) {
+          console.error("Error closing device:", closeError);
+        }
+      }
     }
-  };
+  }
 
   const handleFullscreenToggle = () => {
     if (!document.fullscreenElement) {
@@ -383,6 +432,7 @@ export default function TestScreen() {
       document.exitFullscreen().catch((err) => {
         console.log("Error exiting fullscreen:", err);
       });
+      setIsFullscreen(false);
     }
   };
 
@@ -392,6 +442,8 @@ export default function TestScreen() {
       setCurrentQuestionIndex(currentQuestionIndex + 1);
       setPhase("collecting");
       setTimeLeft(30);
+      usbListeningRef.current = true; // Restart listening for next question
+      connectToUSBDevice(); // Reconnect for the next question
     } else {
       handleSubmit();
       setShowCompletionModal(true);
@@ -575,6 +627,20 @@ export default function TestScreen() {
   };
 
   useEffect(() => {
+    setTestData(dummyTestData);
+    if (receiver?.remotes) {
+      const transformedRemotes = receiver.remotes.map((remote) => ({
+        student_remote_id: remote.remote_id,
+        student_remote_mac_id: remote.remote_id,
+        student_remote_name: remote.remote_name,
+      }));
+      setAllRemotes(transformedRemotes);
+    } else {
+      setAllRemotes([]);
+    }
+  }, [receiver]);
+
+  useEffect(() => {
     if (
       !testData ||
       !usbConnected ||
@@ -588,6 +654,7 @@ export default function TestScreen() {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           setPhase("displaying");
+          usbListeningRef.current = false; // Stop listening when time runs out
           return 0;
         }
         return prev - 1;
@@ -605,6 +672,7 @@ export default function TestScreen() {
           "Could not enter fullscreen automatically. Please click the fullscreen button to continue."
         );
       });
+      setIsFullscreen(true);
     }
   }, []);
 

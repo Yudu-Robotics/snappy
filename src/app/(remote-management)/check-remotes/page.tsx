@@ -172,7 +172,9 @@ const Page: React.FC = () => {
     } catch (error: unknown) {
       console.error("Error in sendCommandAndListen:", error);
       setError(
-        error instanceof Error ? error.message : "Failed to communicate with USB device"
+        error instanceof Error
+          ? error.message
+          : "Failed to communicate with USB device"
       );
     }
   }
@@ -201,7 +203,40 @@ const Page: React.FC = () => {
         />
       </div>
 
-      {currentReceiver && <div className="z-10 mb-6">Start</div>}
+      <div
+        className="absolute z-10 top-4 left-4"
+        onClick={async () => {
+          const deviceInfo = JSON.parse(
+            localStorage.getItem("currentDeviceInfo") || "{}"
+          );
+          const devices = await navigator.usb.getDevices();
+          console.log(
+            "Available devices:",
+            devices.map((d) => ({
+              vendorId: d.vendorId,
+              productId: d.productId,
+              serialNumber: d.serialNumber,
+            }))
+          );
+          const device = devices.find(
+            (d) =>
+              d.vendorId === deviceInfo.vendorId &&
+              d.productId === deviceInfo.productId &&
+              (!deviceInfo.serialNumber ||
+                d.serialNumber === deviceInfo.serialNumber)
+          );
+          if (device?.opened) {
+            await device.close();
+          }
+        }}
+      >
+        <Link
+          href="/test-screen"
+          className="text-md text-[#0A0A0A] font-tthoves-semiBold mb-2 p-4 bg-red-300"
+        >
+          Start test
+        </Link>
+      </div>
 
       {error && <div className="text-red-500 mb-4 z-20">{error}</div>}
 
@@ -230,7 +265,9 @@ const Page: React.FC = () => {
                 }`}
                 onClick={() => handleReceiverSelect(receiver.receiverID)}
                 role="button"
-                aria-label={`Select receiver ${receiver.receiverName || "Unnamed Receiver"}`}
+                aria-label={`Select receiver ${
+                  receiver.receiverName || "Unnamed Receiver"
+                }`}
               >
                 <div className="flex items-center justify-between mb-4">
                   <div>
@@ -242,9 +279,7 @@ const Page: React.FC = () => {
                       Receiver ID: {receiver.receiverID}
                     </p>
                   </div>
-                  <div className="text-md text-[#0A0A0A] font-tthoves-semiBold mb-2">
-                    <Link href="/test-screen">Start test</Link>
-                  </div>
+
                   <div className="flex items-center">
                     <Image
                       src={renderSvg("receiver")}
