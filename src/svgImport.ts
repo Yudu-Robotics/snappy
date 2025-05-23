@@ -28,7 +28,7 @@ const colorPicker = "/assets/profileselection/colorPicker.png";
 const next = "/assets/profileselection/next.svg";
 const previous = "/assets/profileselection/previous.svg";
 const type = "/assets/profileselection/type.svg";
-const editicon="/assets/profileselection/editicon.svg";
+const editicon = "/assets/profileselection/editicon.svg";
 
 //navbar
 const bell = "/assets/navbar/bell.svg";
@@ -108,7 +108,6 @@ function renderSvg(svgName: string): string {
       return bg;
     //Auth
     case "logo":
-      quicktest;
       return logo;
     case "google":
       return google;
@@ -245,8 +244,8 @@ function renderSvg(svgName: string): string {
     case "add":
       return add;
     case "editicon":
-      return editicon
-    
+      return editicon;
+
     //Alert
     case "bluewarning":
       return bluewarning;

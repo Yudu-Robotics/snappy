@@ -14,13 +14,13 @@ interface Receiver {
 interface RemoteState {
   receivers: Receiver[];
   currentReceiver: string;
-  device: any;
+  // device: USBDevice | string;
 }
 
 const initialState: RemoteState = {
   receivers: [],
   currentReceiver: "",
-  device: "",
+  // device: "",
 };
 
 const remoteSlice = createSlice({
@@ -98,7 +98,7 @@ const remoteSlice = createSlice({
     resetReceivers: (state) => {
       state.receivers = [];
       state.currentReceiver = "";
-      state.device = {};
+      // state.device = {};
     },
     safeSetCurrentReceiver: (state, action: PayloadAction<string>) => {
       const receiverExists = state.receivers.some(
@@ -108,12 +108,12 @@ const remoteSlice = createSlice({
         state.currentReceiver = action.payload;
       }
     },
-    addDevice: (state, action: PayloadAction<any>) => {
-      state.device = { ...action.payload }; // Shallow clone
+    // addDevice: (state, action: PayloadAction<any>) => {
+    //   state.device = { ...action.payload }; // Shallow clone
 
-      console.log(state.device);
-      console.log(action.payload);
-    },
+    //   console.log(state.device);
+    //   console.log(action.payload);
+    // },
   },
 });
 
@@ -125,6 +125,6 @@ export const {
   deleteRemote,
   resetReceivers,
   safeSetCurrentReceiver,
-  addDevice,
+  // addDevice,
 } = remoteSlice.actions;
 export default remoteSlice.reducer;

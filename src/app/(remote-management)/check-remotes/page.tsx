@@ -1,4 +1,3 @@
-// @ts-nocheck
 "use client";
 import { useSelector, useDispatch } from "react-redux";
 import renderSvg from "@/svgImport";
@@ -6,6 +5,7 @@ import renderImg from "@/imgImport";
 import React, { useEffect, useState } from "react";
 import init, { decrypt } from "snappy-remote";
 import Link from "next/link";
+import Image from "next/image";
 import { safeSetCurrentReceiver } from "@/app/redux/feature/remoteSlice/remoteSlice";
 import { getOS } from "@/utils/getPlatform";
 
@@ -20,17 +20,30 @@ interface Receiver {
   remotes: Remote[];
 }
 
+interface User {
+  id?: string;
+  name?: string;
+  email?: string;
+  // Add other properties as needed
+}
+
 interface RootState {
   remote: {
     receivers: Receiver[];
     currentReceiver: string;
   };
   auth: {
-    user: any;
+    user: User | null;
   };
   receiver: {
     testID: string;
   };
+}
+
+interface DeviceInfo {
+  vendorId?: number;
+  productId?: number;
+  serialNumber?: string;
 }
 
 const Page: React.FC = () => {
@@ -52,7 +65,7 @@ const Page: React.FC = () => {
 
   async function getAndOpenDevice() {
     try {
-      const deviceInfo = JSON.parse(
+      const deviceInfo: DeviceInfo = JSON.parse(
         localStorage.getItem("currentDeviceInfo") || "{}"
       );
       if (!deviceInfo.vendorId || !deviceInfo.productId) {
@@ -61,7 +74,7 @@ const Page: React.FC = () => {
 
       const devices = await navigator.usb.getDevices();
       const device = devices.find(
-        (d: any) =>
+        (d: USBDevice) =>
           d.vendorId === deviceInfo.vendorId &&
           d.productId === deviceInfo.productId &&
           (!deviceInfo.serialNumber ||
@@ -73,14 +86,14 @@ const Page: React.FC = () => {
       }
 
       return device;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error retrieving device:", error);
-      throw error;
+      throw error instanceof Error ? error : new Error(String(error));
     }
   }
 
   async function sendCommandAndListen() {
-    let device;
+    let device: USBDevice | undefined;
     try {
       device = await getAndOpenDevice();
       await device.close();
@@ -106,20 +119,26 @@ const Page: React.FC = () => {
       if (!result.data) {
         throw new Error("No data received from control transfer");
       }
-      let serial_number = [];
+      let serial_number: Uint8Array;
       if (platform === "windows") {
         const serialKey = new Uint8Array(result.data.buffer);
+        const serialArray: number[] = [];
         for (let i = 2; i < serialKey.length; i += 2) {
-          serial_number.push(serialKey[i]);
+          serialArray.push(serialKey[i]);
         }
+        serial_number = new Uint8Array(serialArray);
       } else {
         const serialNumber = device.serialNumber || "";
-        serial_number = [...serialNumber].map((char) => char.charCodeAt(0));
+        serial_number = new Uint8Array(
+          [...serialNumber].map((char) => char.charCodeAt(0))
+        );
       }
       await device.transferOut(2, command);
       console.log("Command sent");
 
-      while (true) {
+      const maxIterations = 1000;
+      let iteration = 0;
+      while (iteration < maxIterations) {
         const result = await device.transferIn(2, 64);
         if (result.status === "ok" && result.data) {
           const int8Array = new Uint8Array(result.data.buffer);
@@ -147,10 +166,14 @@ const Page: React.FC = () => {
         } else {
           console.log("Transfer error:", result.status);
         }
+        iteration++;
       }
-    } catch (error: any) {
+      throw new Error("Max iterations reached");
+    } catch (error: unknown) {
       console.error("Error in sendCommandAndListen:", error);
-      setError(error.message || "Failed to communicate with USB device");
+      setError(
+        error instanceof Error ? error.message : "Failed to communicate with USB device"
+      );
     }
   }
 
@@ -158,7 +181,9 @@ const Page: React.FC = () => {
     setIsLoading(true);
     setError(null);
     sendCommandAndListen().catch((err) => {
-      setError(err.message || "Failed to connect to device");
+      setError(
+        err instanceof Error ? err.message : "Failed to connect to device"
+      );
       setIsLoading(false);
     });
     dispatch(safeSetCurrentReceiver(receiverID));
@@ -168,7 +193,12 @@ const Page: React.FC = () => {
   return (
     <div className="flex flex-col items-center justify-center min-h-[100vh] bg-[#E3E3E4] p-6 font-tthoves-medium">
       <div className="absolute z-0">
-        <img src={renderImg("dotgrid")} alt="Background grid" />
+        <Image
+          src={renderImg("dotgrid")}
+          alt="Background grid"
+          width={500}
+          height={500}
+        />
       </div>
 
       {currentReceiver && <div className="z-10 mb-6">Start</div>}
@@ -199,6 +229,8 @@ const Page: React.FC = () => {
                     : ""
                 }`}
                 onClick={() => handleReceiverSelect(receiver.receiverID)}
+                role="button"
+                aria-label={`Select receiver ${receiver.receiverName || "Unnamed Receiver"}`}
               >
                 <div className="flex items-center justify-between mb-4">
                   <div>
@@ -211,18 +243,21 @@ const Page: React.FC = () => {
                     </p>
                   </div>
                   <div className="text-md text-[#0A0A0A] font-tthoves-semiBold mb-2">
-                    <Link href={"/test-screen"} className="">
-                      Start test
-                    </Link>
+                    <Link href="/test-screen">Start test</Link>
                   </div>
                   <div className="flex items-center">
-                    <img
+                    <Image
                       src={renderSvg("receiver")}
                       alt="Receiver icon"
                       className="w-12 h-12"
+                      width={48}
+                      height={48}
                     />
                     {currentReceiver === receiver.receiverID && (
-                      <button className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center ml-2">
+                      <button
+                        className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center ml-2"
+                        aria-label="Current receiver selected"
+                      >
                         ✓
                       </button>
                     )}
@@ -261,13 +296,18 @@ const Page: React.FC = () => {
                             </p>
                           </div>
                           <div className="flex items-center">
-                            <img
+                            <Image
                               src={renderSvg("remote")}
                               alt="Remote icon"
                               className="w-8 h-8"
+                              width={32}
+                              height={32}
                             />
                             {availableReceivers.includes(remote.remote_id) && (
-                              <button className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center ml-2">
+                              <button
+                                className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center ml-2"
+                                aria-label="Remote connected"
+                              >
                                 ✓
                               </button>
                             )}

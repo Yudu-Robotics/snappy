@@ -1,7 +1,6 @@
-// @ts-nocheck
 "use client";
+import Image from "next/image";
 import renderImg from "@/imgImport";
-import { useParams } from "next/navigation";
 import React, { useEffect, useState, useRef } from "react";
 import { useSelector } from "react-redux";
 import init, { decrypt } from "snappy-remote";
@@ -13,7 +12,9 @@ interface Option {
   content: string;
   isCorrect: boolean;
 }
-
+interface USBDeviceEvent extends Event {
+  device: USBDevice;
+}
 interface Question {
   question_id: string;
   question_text: string;
@@ -34,7 +35,7 @@ interface TestData {
 
 interface RemoteResponse {
   student_remote_id: string;
-  student_remote_response: any;
+  student_remote_response: string;
 }
 
 interface QuestionResponse {
@@ -97,24 +98,21 @@ const dummyTestData: TestData = {
 };
 
 export default function TestScreen() {
-  const { testId } = useParams();
-  const router = useRouter();
   const { receivers, currentReceiver } = useSelector(
     (state: RootState) => state.remote
   );
+  const router = useRouter();
 
   const receiver = receivers.find(
     (receiver) => receiver.receiverID === currentReceiver
   );
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
   const [testData, setTestData] = useState<TestData | null>(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [timeLeft, setTimeLeft] = useState(30);
   const [phase, setPhase] = useState<"collecting" | "displaying">("collecting");
   const [fullscreenError, setFullscreenError] = useState<string | null>(null);
-  const [receiverId, setReceiverId] = useState<string | null>(null);
   const [allRemotes, setAllRemotes] = useState<
     {
       student_remote_id: string;
@@ -146,13 +144,12 @@ export default function TestScreen() {
     async function initialize() {
       await init();
     }
+    // setIsFullscreen(false);
     initialize();
   }, []);
 
   useEffect(() => {
     setTestData(dummyTestData);
-    setReceiverId(receiver?.receiverID || null);
-    console.log({ receiver });
     if (receiver?.remotes) {
       const transformedRemotes = receiver.remotes.map((remote) => ({
         student_remote_id: remote.remote_id,
@@ -179,7 +176,7 @@ export default function TestScreen() {
       navigator.usb.removeEventListener("disconnect", handleDisconnect);
   }, []);
 
-  async function getAndOpenDevice() {
+  async function getAndOpenDevice(): Promise<USBDevice> {
     try {
       const deviceInfo = JSON.parse(
         localStorage.getItem("currentDeviceInfo") || "{}"
@@ -202,7 +199,7 @@ export default function TestScreen() {
       }
 
       return device;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error retrieving device:", error);
       throw error;
     }
@@ -214,7 +211,6 @@ export default function TestScreen() {
       return;
     }
 
-    // setIsLoading(true);
     setError(null);
 
     try {
@@ -251,7 +247,7 @@ export default function TestScreen() {
       }
 
       const serialKey = new Uint8Array(result.data.buffer);
-      let serial_number = [];
+      const serial_number = [];
       for (let i = 2; i < serialKey.length; i += 2) {
         serial_number.push(serialKey[i]);
       }
@@ -282,7 +278,8 @@ export default function TestScreen() {
                 ) {
                   console.log("answer", answer);
                   try {
-                    const jsonData = JSON.parse(answer);
+                    const jsonData: { MAC: string; value: number } =
+                      JSON.parse(answer);
                     const currentIndex = currentQuestionIndexRef.current;
                     const currentQuestionId =
                       testData?.questions[currentIndex]?.question_id;
@@ -333,15 +330,14 @@ export default function TestScreen() {
                                   }
                                 : q
                             );
-                          } else {
-                            return [
-                              ...prev,
-                              {
-                                question_id: currentQuestionId,
-                                responses: [newResponse],
-                              },
-                            ];
                           }
+                          return [
+                            ...prev,
+                            {
+                              question_id: currentQuestionId,
+                              responses: [newResponse],
+                            },
+                          ];
                         });
                       }
                     }
@@ -369,83 +365,16 @@ export default function TestScreen() {
           break;
         }
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Error:", error);
       setError("Failed to connect to USB device. Please try again.");
       usbListeningRef.current = false;
-    } finally {
-      //   setIsLoading(false);
-      // Do not close the device to allow continued use
-      // if (deviceRef.current) {
-      //   try {
-      //     await deviceRef.current.close();
-      //     deviceRef.current = null;
-      //   } catch (closeError) {
-      //     console.log("Error closing device:", closeError);
-      //   }
-      // }
     }
   };
-
-  const stopUSBListening = async () => {
-    usbListeningRef.current = false;
-    if (deviceRef.current) {
-      try {
-        await deviceRef.current.close();
-        console.log("USB device closed on test end");
-        deviceRef.current = null;
-      } catch (closeError) {
-        console.log("Error closing USB device:", closeError);
-      }
-    }
-    setUsbConnected(false);
-  };
-
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-      setFullscreenError(null);
-    };
-    document.addEventListener("fullscreenchange", handleFullscreenChange);
-    return () =>
-      document.removeEventListener("fullscreenchange", handleFullscreenChange);
-  }, []);
-
-  useEffect(() => {
-    if (!document.fullscreenElement && document.fullscreenEnabled) {
-      document.documentElement.requestFullscreen().catch((err) => {
-        console.log("Error entering fullscreen on load:", err);
-        setFullscreenError(
-          "Could not enter fullscreen automatically. Please click the fullscreen button to continue."
-        );
-      });
-    }
-  }, []);
-
-  useEffect(() => {
-    if (
-      !testData ||
-      !usbConnected ||
-      phase !== "collecting" ||
-      showCompletionModal
-    )
-      return;
-
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          setPhase("displaying");
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [testData, usbConnected, phase, showCompletionModal]);
 
   const handleFullscreenToggle = () => {
     if (!document.fullscreenElement) {
+      setIsFullscreen(true);
       document.documentElement.requestFullscreen().catch((err) => {
         console.log("Error entering fullscreen:", err);
         setFullscreenError("Failed to enter fullscreen. Please try again.");
@@ -483,10 +412,13 @@ export default function TestScreen() {
           const question = testData.questions.find(
             (q) => q.question_id === questionResponse.question_id
           );
-          const selectedOption = question?.options.find(
-            (opt) => opt.option_id === response.student_remote_response
-          );
-          return total + (selectedOption?.isCorrect ? 10 : 0);
+          if (
+            question?.options.find(
+              (opt) => opt.option_id === response.student_remote_response
+            )?.isCorrect
+          ) {
+            return total + 10;
+          }
         }
         return total;
       }, 0);
@@ -500,7 +432,6 @@ export default function TestScreen() {
     });
 
     setProgress(simulatedProgress);
-    // stopUSBListening();
   };
 
   const renderQuestion = (question: Question) => {
@@ -512,7 +443,7 @@ export default function TestScreen() {
 
     if (phase === "collecting") {
       return (
-        <div className="w-full h-full">
+        <div className="w-full h-full bg-white">
           <h3 className="text-xl font-tthoves text-[#4A4A4F] mb-4">
             {question.question_text}
           </h3>
@@ -536,13 +467,6 @@ export default function TestScreen() {
                     (response) =>
                       response.student_remote_id === remote.student_remote_id
                   );
-                  const selectedOption = matchingResponse
-                    ? question.options.find(
-                        (opt) =>
-                          opt.option_id ===
-                          matchingResponse.student_remote_response
-                      )
-                    : null;
                   const isMatchingId = !!matchingResponse;
                   return (
                     <li
@@ -554,11 +478,17 @@ export default function TestScreen() {
                       <div className="flex items-center gap-2 border-2 border-[#E3E3E4] rounded-xl p-4 bg-white">
                         Student: {remote.student_remote_name || "Unknown"},
                         {isMatchingId ? (
-                          <button className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center">
+                          <button
+                            type="button"
+                            className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center"
+                          >
                             ✓
                           </button>
                         ) : (
-                          <button className="bg-gray-500 text-white rounded-full w-6 h-6 flex items-center justify-center">
+                          <button
+                            type="button"
+                            className="bg-gray-500 text-white rounded-full w-6 h-6 flex items-center justify-center"
+                          >
                             ✗
                           </button>
                         )}
@@ -571,89 +501,112 @@ export default function TestScreen() {
           </div>
         </div>
       );
-    } else {
-      return (
-        <div className="w-full h-full relative">
-          <div className="w-full">
-            <h3 className="text-xl font-tthoves text-[#4A4A4F] mb-4">
-              {question.question_text}
-            </h3>
-            <div className="space-y-4">
-              {question.options.map((option) => (
-                <div
-                  key={option.option_id}
-                  className="flex items-center rounded-2xl space-x-2 py-3 px-4 border-[2px] border-[#E3E3E4]"
-                >
-                  <span>{option.option_text}</span>
-                </div>
-              ))}
-            </div>
-            <div className="mt-[300px] w-full rounded-lg">
-              {currentResponses.length > 0 ? (
-                <div className="mt-4 p-4 bg-gray-100 rounded-lg">
-                  <h4 className="text-lg font-tthoves text-[#4A4A4F]">
-                    Responses for Question {currentQuestionIndex + 1}:
-                  </h4>
-                  <ul className={`list-disc pl-5 grid grid-cols-${gridCols}`}>
-                    {allRemotes.map((remote, index) => {
-                      const matchingResponse = currentResponses.find(
-                        (response) =>
-                          response.student_remote_id ===
-                          remote.student_remote_id
-                      );
-                      const selectedOption = matchingResponse
-                        ? question.options.find(
-                            (opt) =>
-                              opt.option_id ===
-                              matchingResponse.student_remote_response
-                          )
-                        : null;
-                      const isMatchingId = !!matchingResponse;
-                      return (
-                        <li
-                          key={index}
-                          className={`${
-                            isMatchingId ? "bg-yellow-200 p-1 rounded" : "p-1"
-                          } flex items-center gap-3`}
-                        >
-                          <div className="flex items-center gap-2 border-2 border-[#E3E3E4] rounded-xl p-4 bg-white">
-                            Student: {remote.student_remote_name || "Unknown"},
-                            {isMatchingId ? (
-                              <button className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center">
-                                ✓
-                              </button>
-                            ) : (
-                              <button className="bg-gray-500 text-white rounded-full w-6 h-6 flex items-center justify-center">
-                                ✗
-                              </button>
-                            )}
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              ) : (
-                <div className="mt-4 p-4 bg-gray-100 rounded-lg">
-                  <p className="text-lg font-tthoves text-[#4A4A4F]">
-                    No responses received for this question.
-                  </p>
-                </div>
-              )}
-            </div>
+    }
+    return (
+      <div className="w-full h-full relative bg-white">
+        <div className="w-full">
+          <h3 className="text-xl font-tthoves text-[#4A4A4F] mb-4">
+            {question.question_text}
+          </h3>
+          <div className="space-y-4">
+            {question.options.map((option) => (
+              <div
+                key={option.option_id}
+                className="flex items-center rounded-2xl space-x-2 py-3 px-4 border-[2px] border-[#E3E3E4]"
+              >
+                <span>{option.option_text}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-[300px] w-full rounded-lg">
+            {currentResponses.length > 0 ? (
+              <div className="mt-4 p-4 bg-gray-100 rounded-lg">
+                <h4 className="text-lg font-tthoves text-[#4A4A4F]">
+                  Responses for Question {currentQuestionIndex + 1}:
+                </h4>
+                <ul className={`list-disc pl-5 grid grid-cols-${gridCols}`}>
+                  {allRemotes.map((remote, index) => {
+                    const matchingResponse = currentResponses.find(
+                      (response) =>
+                        response.student_remote_id === remote.student_remote_id
+                    );
+                    const isMatchingId = !!matchingResponse;
+                    return (
+                      <li
+                        key={index}
+                        className={`${
+                          isMatchingId ? "bg-yellow-200 p-1 rounded" : "p-1"
+                        } flex items-center gap-3`}
+                      >
+                        <div className="flex items-center gap-2 border-2 border-[#E3E3E4] rounded-xl p-4 bg-white">
+                          Student: {remote.student_remote_name || "Unknown"},
+                          {isMatchingId ? (
+                            <button
+                              type="button"
+                              className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center"
+                            >
+                              ✓
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="bg-gray-500 text-white rounded-full w-6 h-6 flex items-center justify-center"
+                            >
+                              ✗
+                            </button>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ) : (
+              <div className="mt-4 p-4 bg-gray-100 rounded-lg">
+                <p className="text-lg font-tthoves text-[#4A4A4F]">
+                  No responses received for this question.
+                </p>
+              </div>
+            )}
           </div>
         </div>
-      );
-    }
-  };
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-lg">Loading...</div>
       </div>
     );
-  }
+  };
+
+  useEffect(() => {
+    if (
+      !testData ||
+      !usbConnected ||
+      phase !== "collecting" ||
+      showCompletionModal
+    ) {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          setPhase("displaying");
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [testData, usbConnected, phase, showCompletionModal]);
+
+  useEffect(() => {
+    if (!document.fullscreenElement && document.fullscreenEnabled) {
+      document.documentElement.requestFullscreen().catch((err) => {
+        console.log("Error entering fullscreen on load:", err);
+        setFullscreenError(
+          "Could not enter fullscreen automatically. Please click the fullscreen button to continue."
+        );
+      });
+    }
+  }, []);
 
   if (error) {
     return (
@@ -684,6 +637,7 @@ export default function TestScreen() {
           </p>
           {!usbConnected && isFullscreen && (
             <button
+              type="button"
               onClick={connectToUSBDevice}
               className="bg-[#5423E6] text-white px-6 py-2 rounded-lg mb-4"
             >
@@ -692,6 +646,7 @@ export default function TestScreen() {
           )}
           {!isFullscreen && (
             <button
+              type="button"
               onClick={handleFullscreenToggle}
               className="bg-[#5423E6] text-white px-6 py-2 rounded-lg"
             >
@@ -714,7 +669,7 @@ export default function TestScreen() {
   const currentQuestion = testData.questions[currentQuestionIndex];
 
   return (
-    <div className="h-full w-full flex flex-col items-center justify-center p-4">
+    <div className="h-full w-full flex flex-col items-center justify-center p-4 bg-white">
       {showCompletionModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white p-8 rounded-xl shadow-2xl max-w-4xl w-full">
@@ -741,9 +696,9 @@ export default function TestScreen() {
                     </tr>
                   </thead>
                   <tbody>
-                    {progress.map((item, index) => (
+                    {progress.map((item) => (
                       <tr
-                        key={index}
+                        key={item.student_remote_id}
                         className="hover:bg-gray-50 transition-colors"
                       >
                         <td className="border border-gray-200 p-3 text-[#4A4A4F] font-tthoves">
@@ -774,6 +729,7 @@ export default function TestScreen() {
                 dashboard.
               </p>
               <button
+                type="button"
                 onClick={() => router.push("/")}
                 className="bg-[#5423E6] text-white px-8 py-3 rounded-lg font-tthoves hover:bg-[#4A1FCC] transition-colors"
               >
@@ -795,6 +751,7 @@ export default function TestScreen() {
               </div>
             )}
             <button
+              type="button"
               onClick={handleFullscreenToggle}
               className="text-[#4A4A4F] font-tthoves text-lg"
             >
@@ -802,16 +759,27 @@ export default function TestScreen() {
             </button>
           </div>
         </div>
-        <div className="w-full h-[1px] bg-[#E3E3E4] my-3"></div>
+        <div className="w-full h-[1px] bg-[#E3E3E4] my-3" />
         <div className="h-full">{renderQuestion(currentQuestion)}</div>
       </div>
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 flex justify-between items-center">
-        <div className="text-[#4A4A4F] font-tthoves-semiBold text-lg flex items-center justify-center gap-1">
+        <button
+          type="button"
+          className="text-[#4A4A4F] font-tthoves-semiBold text-lg flex items-center justify-center gap-1"
+          onClick={() => router.push("/")}
+        >
           Exit Test
-          <img src={renderImg("logout")} alt="Logout" className="ml-2 w-5" />
-        </div>
+          <Image
+            src={renderImg("logout")}
+            alt="Logout"
+            width={20}
+            height={20}
+            className="ml-2"
+          />
+        </button>
         <div className="mt-4">
           <button
+            type="button"
             onClick={handleNext}
             className="bg-[#5423E6] text-white px-6 py-2 rounded-lg flex items-center gap-2"
           >

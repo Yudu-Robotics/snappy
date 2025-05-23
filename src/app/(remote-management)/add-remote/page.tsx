@@ -1,13 +1,13 @@
-// @ts-nocheck
 "use client";
 import init, { decrypt } from "snappy-remote";
 import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { getOS } from "@/utils/getPlatform";
+import Image from "next/image";
 import renderImg from "@/imgImport";
 import renderSvg from "@/svgImport";
 import {
-  addDevice,
+  // addDevice,
   addReceiver,
   addRemote,
   deleteRemote,
@@ -20,7 +20,9 @@ interface Remote {
   remote_name: string;
   remote_id: string;
 }
-
+interface NavigatorUSB {
+  usb: USBDevice;
+}
 interface Receiver {
   receiverName: string;
   receiverID: string;
@@ -33,12 +35,9 @@ interface RootState {
   };
 }
 
-interface ScanConnectorProps {}
-
-const ScanConnector: React.FC<ScanConnectorProps> = () => {
+const ScanConnector: React.FC = () => {
   const dispatch = useDispatch();
   const receivers = useSelector((state: RootState) => state.remote.receivers);
-  const data = useSelector((state: RootState) => state.remote);
   const [vendorId, setVendorId] = useState<number | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,17 +61,16 @@ const ScanConnector: React.FC<ScanConnectorProps> = () => {
     initialize();
   }, []);
 
-  async function sendCommandAndListen(device: any) {
+  async function sendCommandAndListen(device: USBDevice) {
     try {
       await device.open();
       if (device.configuration === null) {
         await device.selectConfiguration(1);
       }
       await device.claimInterface(1);
-      dispatch(addDevice(device));
+      // dispatch(addDevice(device));
       console.log(device);
 
-      // Store serializable device info in localStorage
       localStorage.setItem(
         "currentDeviceInfo",
         JSON.stringify({
@@ -95,22 +93,36 @@ const ScanConnector: React.FC<ScanConnectorProps> = () => {
         },
         255
       );
-      let serial_number = [];
+      let serial_number: Uint8Array;
       if (platform === "windows") {
-        const serialKey = new Uint8Array(result.data.buffer);
-        for (let i = 2; i < serialKey.length; i += 2) {
-          serial_number.push(serialKey[i]);
+        if (!result.data) {
+          throw new Error("No data received from controlTransferIn");
         }
+        const serialKey = new Uint8Array(result.data.buffer);
+        const serialArray: number[] = [];
+        for (let i = 2; i < serialKey.length; i += 2) {
+          serialArray.push(serialKey[i]);
+        }
+        serial_number = new Uint8Array(serialArray);
       } else {
         const serialNumber = device.serialNumber || "";
-        serial_number = [...serialNumber].map((char) => char.charCodeAt(0));
+        serial_number = new Uint8Array(
+          [...serialNumber].map((char) => char.charCodeAt(0))
+        );
       }
       await device.transferOut(2, command);
       setShowReceiver(true);
 
-      while (true) {
+      const maxIterations = 1000;
+      let iteration = 0;
+      while (iteration < maxIterations) {
         const result = await device.transferIn(2, 64);
         if (result.status === "ok") {
+          if (!result.data) {
+            console.log("No data received from transferIn");
+            iteration++;
+            continue; // Skip to the next iteration if no data
+          }
           const int8Array = new Uint8Array(result.data.buffer);
           if (int8Array.length === 17) {
             const data = new Uint8Array([...int8Array.slice(0, 17)]);
@@ -140,7 +152,9 @@ const ScanConnector: React.FC<ScanConnectorProps> = () => {
         } else {
           console.log("Transfer error:", result.status);
         }
+        iteration++;
       }
+      throw new Error("Max iterations reached");
     } catch (error) {
       console.log("Error:", error);
       throw error;
@@ -155,7 +169,8 @@ const ScanConnector: React.FC<ScanConnectorProps> = () => {
       if (!("usb" in navigator)) {
         throw new Error("Web USB API is not supported in this browser.");
       }
-      const device = await navigator.usb.requestDevice({
+      const usbNavigator = navigator as Navigator & NavigatorUSB;
+      const device = await usbNavigator.usb.requestDevice({
         filters: [{ vendorId: 0xb1b0, productId: 0x8055 }],
       });
       await sendCommandAndListen(device);
@@ -218,9 +233,10 @@ const ScanConnector: React.FC<ScanConnectorProps> = () => {
   const receiverHandler = () => {
     try {
       const newReceiverID = new Date().toISOString();
+      const name = customName.trim() || "Unnamed Receiver";
       dispatch(
         addReceiver({
-          receiverName: customName || "Unnamed Receiver",
+          receiverName: name,
           receiverID: newReceiverID,
         })
       );
@@ -295,7 +311,12 @@ const ScanConnector: React.FC<ScanConnectorProps> = () => {
         <div className="text-green-500 mt-2 z-20">{successMessage}</div>
       )}
       <div className="absolute z-0">
-        <img src={renderImg("dotgrid")} alt="Background grid" />
+        <Image
+          src={renderImg("dotgrid")}
+          alt="Background grid"
+          width={500}
+          height={500}
+        />
       </div>
       {summary ? (
         <div className="z-20">
@@ -320,10 +341,12 @@ const ScanConnector: React.FC<ScanConnectorProps> = () => {
                   }
                 }}
               >
-                <img
+                <Image
                   src={renderImg("connector")}
                   alt="Receiver"
                   className={`${showReceiver ? "w-20 h-20" : ""}`}
+                  width={200}
+                  height={200}
                 />
               </div>
               {!vendorId && (
@@ -351,11 +374,14 @@ const ScanConnector: React.FC<ScanConnectorProps> = () => {
                     {!isEditing ? (
                       <div className="flex items-center gap-2">
                         {customName || "Unnamed Receiver"}
-                        <img
+                        <Image
                           src={renderSvg("edit")}
-                          alt="Edit icon"
+                          alt="Edit receiver name"
                           className="cursor-pointer"
                           onClick={handleEditClick}
+                          width={24}
+                          height={24}
+                          aria-label="Edit receiver name"
                         />
                       </div>
                     ) : (
@@ -388,10 +414,12 @@ const ScanConnector: React.FC<ScanConnectorProps> = () => {
             </div>
             <div className="flex flex-col">
               <div>
-                <img
+                <Image
                   src={renderImg("remote")}
                   alt="Remote"
                   className={`${showRemote ? "w-20 h-20" : ""}`}
+                  width={200}
+                  height={200}
                 />
               </div>
             </div>
@@ -451,9 +479,9 @@ const ScanConnector: React.FC<ScanConnectorProps> = () => {
                         ) : (
                           <div className="flex items-center gap-2">
                             <div>{remote.remote_name || "Unnamed Remote"}</div>
-                            <img
+                            <Image
                               src={renderSvg("edit")}
-                              alt="Edit icon"
+                              alt="Edit remote name"
                               className="cursor-pointer"
                               onClick={() =>
                                 handleEditRemoteClick(
@@ -461,14 +489,20 @@ const ScanConnector: React.FC<ScanConnectorProps> = () => {
                                   remote.remote_name
                                 )
                               }
+                              width={24}
+                              height={24}
+                              aria-label="Edit remote name"
                             />
                           </div>
                         )}
-                        <img
+                        <Image
                           src={renderSvg("trash")}
-                          alt="Delete icon"
+                          alt="Delete remote"
                           className="cursor-pointer"
                           onClick={() => handleDeleteRemote(remote.remote_id)}
+                          width={24}
+                          height={24}
+                          aria-label="Delete remote"
                         />
                       </div>
                       <div>MAC ID:- {remote.remote_id}</div>
@@ -496,31 +530,41 @@ const ScanConnector: React.FC<ScanConnectorProps> = () => {
                 onClick={() => setSummary(!summary)}
                 className="cursor-pointer"
               >
-                <img src={renderSvg("cross")} alt="Cross icon" />
+                <Image
+                  src={renderSvg("cross")}
+                  alt="Close summary"
+                  width={24}
+                  height={24}
+                  aria-label="Close summary"
+                />
               </div>
             </div>
             <div className="flex justify-between items-center gap-2 mt-5">
               <div className="flex items-center gap-2">
                 <div className="flex mt-2">
-                  <img
+                  <Image
                     src={renderImg("receiverA")}
-                    alt="Check icon"
+                    alt="Receiver"
                     className="w-20 h-20"
+                    width={80}
+                    height={80}
                   />
                 </div>
-                <div className="flex flex-col justify-center">
+                <div className="flex flex-col justify-center text-[#0A0A0A]">
                   <div>{customName || "Name"}</div>
                   <div>{vendorId || "Not Connected"}</div>
                 </div>
               </div>
             </div>
             <div>
-              <div className="flex items-center">
+              <div className="flex items-center text-[#0A0A0A]">
                 <div className="flex mt-2">
-                  <img
+                  <Image
                     src={renderImg("remoteA")}
-                    alt="Check icon"
+                    alt="Remote"
                     className="w-20 h-20"
+                    width={80}
+                    height={80}
                   />
                 </div>
                 <div>
