@@ -210,7 +210,7 @@ export default function TestScreen() {
           (!deviceInfo.serialNumber ||
             d.serialNumber === deviceInfo.serialNumber)
       );
-      
+
       if (!device) {
         throw new Error("Device not found or not authorized.");
       }
@@ -287,8 +287,6 @@ export default function TestScreen() {
       setUsbConnected(true);
       setError(null);
       usbListeningRef.current = true;
-
-      const expectedRemotes = receiver?.remotes.length || 0;
 
       while (usbListeningRef.current) {
         try {
