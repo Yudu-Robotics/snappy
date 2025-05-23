@@ -52,46 +52,112 @@ interface RootState {
 }
 
 const dummyTestData: TestData = {
-  test_id: "dummy_test_1",
-  title: "Dummy MCQ Test",
+  test_id: "math_test_grade4_1",
+  title: "4th Grade Math Quiz",
   points: 100,
   test_type: "mcq",
   order: 1,
-  questions: Array.from({ length: 3 }, (_, index) => ({
-    question_id: `q${index + 1}`,
-    question_text: `Question ${
-      index + 1
-    }: What is the answer to this question?`,
-    content: "",
-    format: "mcq",
-    answer_text: null,
-    options: [
-      {
-        option_id: `q${index + 1}_opt1`,
-        option_text: "Option 1",
-        content: "",
-        isCorrect: false,
-      },
-      {
-        option_id: `q${index + 1}_opt2`,
-        option_text: "Option 2",
-        content: "",
-        isCorrect: true,
-      },
-      {
-        option_id: `q${index + 1}_opt3`,
-        option_text: "Option 3",
-        content: "",
-        isCorrect: false,
-      },
-      {
-        option_id: `q${index + 1}_opt4`,
-        option_text: "Option 4",
-        content: "",
-        isCorrect: false,
-      },
-    ],
-  })),
+  questions: [
+    {
+      question_id: "q1",
+      question_text: "What is 24 + 38?",
+      content: "",
+      format: "mcq",
+      answer_text: null,
+      options: [
+        {
+          option_id: "q1_opt1",
+          option_text: "52",
+          content: "",
+          isCorrect: false,
+        },
+        {
+          option_id: "q1_opt2",
+          option_text: "62",
+          content: "",
+          isCorrect: true,
+        },
+        {
+          option_id: "q1_opt3",
+          option_text: "58",
+          content: "",
+          isCorrect: false,
+        },
+        {
+          option_id: "q1_opt4",
+          option_text: "64",
+          content: "",
+          isCorrect: false,
+        },
+      ],
+    },
+    {
+      question_id: "q2",
+      question_text: "What is 7 × 6?",
+      content: "",
+      format: "mcq",
+      answer_text: null,
+      options: [
+        {
+          option_id: "q2_opt1",
+          option_text: "36",
+          content: "",
+          isCorrect: false,
+        },
+        {
+          option_id: "q2_opt2",
+          option_text: "48",
+          content: "",
+          isCorrect: false,
+        },
+        {
+          option_id: "q2_opt3",
+          option_text: "42",
+          content: "",
+          isCorrect: true,
+        },
+        {
+          option_id: "q2_opt4",
+          option_text: "45",
+          content: "",
+          isCorrect: false,
+        },
+      ],
+    },
+    {
+      question_id: "q3",
+      question_text: "What is 54 ÷ 9?",
+      content: "",
+      format: "mcq",
+      answer_text: null,
+      options: [
+        {
+          option_id: "q3_opt1",
+          option_text: "5",
+          content: "",
+          isCorrect: false,
+        },
+        {
+          option_id: "q3_opt2",
+          option_text: "6",
+          content: "",
+          isCorrect: true,
+        },
+        {
+          option_id: "q3_opt3",
+          option_text: "7",
+          content: "",
+          isCorrect: false,
+        },
+        {
+          option_id: "q3_opt4",
+          option_text: "8",
+          content: "",
+          isCorrect: false,
+        },
+      ],
+    },
+  ],
 };
 
 export default function TestScreen() {
